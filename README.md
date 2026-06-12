@@ -1,76 +1,83 @@
 # bitBloom Cloud Functions
 
-This repository contains the deployed Node.js Firebase Cloud Functions used by the BitBloom app. These functions handle backend logic such as aggregating business metrics, running daily ROI and reward batches, and returning team-level details for users.
+Firebase Cloud Functions source for BitBloom's referral metrics, daily plan processing, wallet credits, and team reporting.
+
+## Overview
+
+This repository contains three JavaScript function modules that operate on BitBloom data in Cloud Firestore. Two functions run on schedules to aggregate referral business and process daily plan earnings. A callable function returns six-level referral-team summaries or the members of a requested level.
+
+The repository is a source snapshot, not a complete standalone Firebase Functions project. It does not include a package manifest, Firebase project configuration, a shared entry point, tests, or deployment automation.
 
 ## Functions
 
-- **aggregateBusinessEvery10Min** – Scheduled function that runs every ten minutes. It traverses each user’s direct and indirect referrals, sums the total deposits for those users, and writes aggregated business metrics (total deposits and direct deposits) into the `business_metrics/{uid}` document in Firestore. This enables up ‑to ‑date business performance reporting.
+### `aggregateBusinessEvery10Min`
 
-- **dailyBatch** – Scheduled daily job that runs at 06:55 Asia/Karachi. It handles multiple phases:
-  1. Collect ROI (return on investment) or refunds from user plans and auto reinvest renewals.
-  2. Credit ROI/refunds to user wallets and record transactions (`roiTransactions` collection).
-  3. Write plan purchases to `planTransactions` (with FCM notifications to the app).
-  4. Credit multi‑level team rewards to user wallets and record team transactions (`teamTransactions` collection).
-  This batch job ensures daily profit distributions and keeps transaction logs up‭to date.
+- Runs every 10 minutes in `us-central1`.
+- Pages through users and follows each referral tree up to six levels.
+- Separates direct and indirect referrals.
+- Sums `investment.total_deposit` values from matching account records.
+- Merges direct, indirect, and update timestamp fields into `business_metrics/{userId}`.
 
-- **getTeamLevels** – On‑call HTTPS function that returns team‑level information for a user. Called with `{ userId }`, it returns a summary of six levels showing the number of users in each level along with their deposit, total buying profit, and invested amount. Called with `{ userId, level: 3 }`, it returns an array of users in a specific level (e.g. level 3). This function is read‑only and doesn’t write any data.
+### `dailyBatchJob`
 
-## Getting Started
+- Runs daily at 06:55 in the `Asia/Karachi` time zone.
+- Scans active user plans and calculates due daily profit or principal refunds.
+- Advances auto-invest plans and records renewed plan transactions.
+- Updates account earning and investment balances.
+- Creates ROI, plan, and team transaction records.
+- Calculates referral rewards across eligible team levels.
+- Sends Firebase Cloud Messaging notifications for plan renewals and team rewards when a token is available.
 
-To deploy or run these cloud functions locally:
+### `getTeamLevels`
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/shayann07/bitBloom-Cloud-Functions.git
-   cd bitBloom-Cloud-Functions
-   ```
+- Exposes a callable Functions v2 endpoint.
+- Accepts a `userId` and optionally a level from 1 through 6.
+- Returns a six-level summary with user counts, activity counts, deposits, buying profit, invested amount, and unlock state.
+- Returns member details for one requested level.
+- Reads from the `users`, `accounts`, and `userPlans` collections without writing data.
 
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+## Tech Stack
 
-3. **Set up Firebase** using the Firebase CLI. If you haven’t already, install the CLI and log in:
-   ```bash
-   npm install -g firebase-tools
-   firebase login
-   ```
+- JavaScript
+- Node.js module APIs
+- Firebase Cloud Functions v2
+- Firebase Admin SDK
+- Cloud Firestore
+- Firebase Cloud Messaging
+- Cloud Scheduler-backed scheduled functions
 
-4. **Configure your Firebase project** by specifying your project ID:
-   ```bash
-   firebase use --add
-   ```
+## Data Flow
 
-5. **Add environment variables** (e.g. API keys, secret keys) using `firebase functions:config:set` or the `.env` file (not included for security).
+The scheduled modules query Firestore in pages and batches to stay within query and write limits. Referral relationships are resolved through each user's referral code, account documents supply deposit and balance data, and plan documents drive the daily ROI and renewal workflow. Results are written back to metrics, account, reward, and transaction collections.
 
-6. **Deploy the functions**:
-   ```bash
-   firebase deploy --only functions
-   ```
+## Repository Structure
 
-## Technologies Used
+```text
+.
+|-- aggregatebusinessevery10min.js  # Referral-business aggregation job
+|-- dailyBatch.js                   # Daily plan, wallet, and team-reward processing
+|-- getTeamLevels.js                # Callable referral-team query
+`-- README.md
+```
 
-- **Node.js** – JavaScript runtime.
-- **Firebase Cloud Functions** – Serverless functions for backend logic.
-- **Cloud Firestore / Firebase Admin** – Database and admin SDK for server‑side access.
+## Setup and Deployment
 
-## License
+These files cannot be installed or deployed directly from this repository in its current form. A Firebase Functions project would need to provide:
 
-This project is licensed under the **MIT License**. Feel free to use and modify as needed.
+- a compatible Node.js runtime and package manifest
+- `firebase-functions` and `firebase-admin` dependencies
+- a Firebase project configuration and function entry point
+- the required Firestore collections, fields, indexes, and security controls
+- Cloud Scheduler and Firebase Cloud Messaging prerequisites
 
-<!-- gitpulse:contribution index="1" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="2" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="3" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="4" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="5" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="6" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="7" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="8" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="9" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="10" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="11" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="12" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="13" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="14" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="15" timestamp="2026-04-24" -->
-<!-- gitpulse:contribution index="16" timestamp="2026-05-02" -->
+After those pieces are supplied, the modules can be integrated into that project and validated with the Firebase Emulator Suite before deployment.
+
+## Current Status and Limitations
+
+- Deployment status cannot be verified from this repository.
+- No automated tests or emulator configuration are included.
+- The callable function validates input shape but does not check caller authentication or authorization.
+- Each module initializes the Admin SDK independently, so integration into one entry point may require shared initialization.
+- The code depends on a specific, undocumented Firestore schema and composite indexes.
+- `dailyBatch.js` uses ECMAScript modules while the other files use CommonJS; the host project's module configuration must account for both styles.
+- Failure recovery, idempotency guarantees, monitoring, and operational runbooks are not documented.
